@@ -4,68 +4,98 @@ from geopy.distance import geodesic
 import folium
 from streamlit_folium import st_folium
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="CALEB DISPATCH V2.1", layout="wide")
+# Configuration de la page
+st.set_page_config(page_title="CALEB DISPATCH V2", layout="wide")
 
 # STYLE CYBER-DARK
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; color: #00ffc8; }
     h1, h2, h3 { color: #00ffc8 !important; }
-    .stButton>button { background-color: #00ffc8; color: #0b0e14; font-weight: bold; border-radius: 5px; }
+    .stButton>button { background-color: #00ffc8; color: #0b0e14; border-radius: 5px; width: 100%; font-weight: bold; }
     .stTextArea>div>div>textarea { background-color: #1a1f29; color: #ffffff; border: 1px solid #00ffc8; }
+    .success-text { color: #00ff00; font-weight: bold; font-size: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTIONS CACHÉES (Pour éviter les bugs de disparition) ---
-@st.cache_data
-def get_coordinates(address_list):
-    """Transforme les adresses en coordonnées GPS et les garde en mémoire."""
-    geolocator = Nominatim(user_agent="caleb_dispatch_final")
-    results = []
-    for addr in address_list:
-        try:
-            location = geolocator.geocode(addr, timeout=10)
-            if location:
-                results.append({"nom": addr, "coord": (location.latitude, location.longitude)})
-        except:
-            continue
-    return results
-
 st.title("🚚 CALEB DISPATCH PRO")
-st.subheader("Optimiseur de route - Version Stable")
+st.subheader("Optimiseur de route mobile - Sherbrooke Edition")
 
-# --- BARRE LATÉRALE ---
+# Initialisation du géocodeur (Nominatim)
+geolocator = Nominatim(user_agent="caleb_dispatch_final")
+
+# --- BARRE LATÉRALE : SAISIE ---
 with st.sidebar:
-    st.write("### 📍 Entrez les adresses")
-    adresses_raw = st.text_area("Une adresse par ligne :", height=200, placeholder="Ex: 5073 rue Bertrand-Fabi, Sherbrooke, QC")
+    st.write("### 📍 Vos arrêts du jour")
+    st.caption("La première adresse est votre point de départ.")
+    adresses_raw = st.text_area("Une adresse par ligne :", height=250, placeholder="Ex: 2500 Boul de l'Université, Sherbrooke, QC")
     btn_optimiser = st.button("🚀 TRACER L'ITINÉRAIRE")
 
-# --- LOGIQUE PRINCIPALE ---
-if adresses_raw:
-    liste_adresses = [a.strip() for a in adresses_raw.split('\n') if a.strip()]
+# --- LOGIQUE DE CALCUL ---
+if btn_optimiser and adresses_raw:
+    adresses = [a.strip() for a in adresses_raw.split('\n') if a.strip()]
     
-    if btn_optimiser and len(liste_adresses) > 1:
-        # 1. Récupération des points (avec cache)
-        points = get_coordinates(liste_adresses)
+    if len(adresses) > 1:
+        points = []
+        with st.spinner('Géolocalisation des adresses en cours...'):
+            for addr in adresses:
+                try:
+                    location = geolocator.geocode(addr)
+                    if location:
+                        points.append({"nom": addr, "coord": (location.latitude, location.longitude)})
+                except:
+                    continue
         
         if len(points) > 1:
-            # 2. Algorithme du plus proche voisin
+            # Algorithme du "Plus proche voisin"
             route_optimisee = [points[0]]
             points_restants = points[1:]
-            dist_totale = 0
+            total_distance = 0
             
             while points_restants:
-                dernier = route_optimisee[-1]
-                proche = min(points_restants, key=lambda p: geodesic(dernier['coord'], p['coord']).km)
-                dist_totale += geodesic(dernier['coord'], proche['coord']).km
-                route_optimisee.append(proche)
-                points_restants.remove(proche)
+                dernier_point = route_optimisee[-1]
+                proche_voisin = min(points_restants, key=lambda p: geodesic(dernier_point['coord'], p['coord']).km)
+                total_distance += geodesic(dernier_point['coord'], proche_voisin['coord']).km
+                route_optimisee.append(proche_voisin)
+                points_restants.remove(proche_voisin)
             
-            # 3. Affichage des résultats
+            # --- AFFICHAGE DES RÉSULTATS ---
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                st.success(f"Itinéraire : {dist_totale:.1f} km")
+                st.markdown("<p class='success-text'>✅ Itinéraire optimisé trouvé !</p>", unsafe_allow_html=True)
+                st.metric("Distance totale", f"{total_distance:.2f} km")
+                
+                st.write("### Ordre des arrêts :")
                 for i, p in enumerate(route_optimisee):
-                    st.write(f
+                    emoji = "🏠" if i == 0 else "📍"
+                    st.write(f"**{i+1}.** {emoji} {p['nom']}")
+
+            with col2:
+                # Création de la carte avec Folium
+                m = folium.Map(location=route_optimisee[0]['coord'], zoom_start=12)
+                
+                # Liste des coordonnées pour la ligne bleue
+                route_coords = []
+                for i, p in enumerate(route_optimisee):
+                    route_coords.append(p['coord'])
+                    # Marqueur vert pour le départ, bleu pour le reste
+                    color = 'green' if i == 0 else 'blue'
+                    folium.Marker(
+                        location=p['coord'],
+                        popup=f"Arrêt {i+1}",
+                        icon=folium.Icon(color=color, icon='info-sign')
+                    ).add_to(m)
+                
+                # Tracer la ligne bleue reliant les points
+                folium.PolyLine(route_coords, color="blue", weight=4, opacity=0.7).add_to(m)
+                
+                # Affichage de la carte
+                st_folium(m, width="100%", height=500)
+        else:
+            st.error("Impossible de géolocaliser ces adresses. Vérifiez l'orthographe ou précisez 'Sherbrooke, QC'.")
+    else:
+        st.warning("Veuillez entrer au moins deux adresses.")
+
+st.markdown("---")
+st.caption("Caleb Dispatch Engine v2.0 - Propulsé par Python & Streamlit")
