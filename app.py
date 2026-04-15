@@ -72,14 +72,12 @@ if btn_optimiser and adresses_raw:
                     st.write(f"**{i+1}.** {emoji} {p['nom']}")
 
             with col2:
-                # Création de la carte avec Folium
+                # Création de la carte
                 m = folium.Map(location=route_optimisee[0]['coord'], zoom_start=12)
                 
-                # Liste des coordonnées pour la ligne bleue
                 route_coords = []
                 for i, p in enumerate(route_optimisee):
                     route_coords.append(p['coord'])
-                    # Marqueur vert pour le départ, bleu pour le reste
                     color = 'green' if i == 0 else 'blue'
                     folium.Marker(
                         location=p['coord'],
@@ -87,11 +85,10 @@ if btn_optimiser and adresses_raw:
                         icon=folium.Icon(color=color, icon='info-sign')
                     ).add_to(m)
                 
-                # Tracer la ligne bleue reliant les points
                 folium.PolyLine(route_coords, color="blue", weight=4, opacity=0.7).add_to(m)
                 
-                # Affichage de la carte
-                st_folium(m, width="100%", height=500)
+                # LA MODIFICATION EST ICI : on ajoute key="dispatch_map"
+                st_folium(m, width="100%", height=500, key="dispatch_map")
         else:
             st.error("Impossible de géolocaliser ces adresses. Vérifiez l'orthographe ou précisez 'Sherbrooke, QC'.")
     else:
